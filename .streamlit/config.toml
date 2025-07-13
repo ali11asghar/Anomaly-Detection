@@ -1,0 +1,14 @@
+[theme]
+base="light"
+primaryColor="slateBlue"
+backgroundColor="white"
+secondaryBackgroundColor="#f7fafc"
+baseRadius="full"
+baseFontSize = 17
+font = "sans serif"
+codeFont = "monospace"
+[theme.fontFaces]
+  [theme.fontFaces.header]
+    weight = "800"
+  [theme.fontFaces.body]
+    weight = "800"
