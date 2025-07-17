@@ -44,7 +44,7 @@ def reset_session_state():
 
 
 def main():
-    st.set_page_config(page_title="Privacy-Protected Anomaly Detection",
+    st.set_page_config(page_title="Privacy-Protected Anomaly Detection for Post-Event Investigation",
                        layout="wide")
 
     st.markdown("""
@@ -61,7 +61,7 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    st.title("Privacy-Protected Anomaly Detection")
+    st.title("Privacy-Protected Anomaly Detection for Post-Event Investigation")
     # Initialize session state variables if they don't exist
     if 'current_step' not in st.session_state:
         st.session_state.current_step = 1
@@ -114,14 +114,6 @@ def main():
         if st.session_state.encryption_key_generated and st.session_state.encryption_key:
             st.success("Encryption key generated!")
             # st.code(st.session_state.encryption_key.decode(), language="text")
-
-            # Provide download button
-            st.download_button(
-                label="⬇️ Download Encryption Key",
-                data=st.session_state.encryption_key,
-                file_name=f"{video_name}_encryption.key",
-                mime="application/octet-stream"
-            )
         else:
             if st.button("Generate Encryption Key"):
                 from cryptography.fernet import Fernet
@@ -133,10 +125,10 @@ def main():
                 st.rerun()
 
     # Step 3: Encryption
-    with st.expander("Step 3: Feature Extraction & Encryption", expanded=True):
+    with st.expander("Step 3: Encryption", expanded=True):
         if hasattr(st.session_state, 'uploaded_file') and st.session_state.encryption_key_generated:
-            if st.button("Process video",):
-                with st.spinner("Processing..."):
+            if st.button("Process and Encrypt Video"):
+                with st.spinner("Processing and encrypting your video..."):
                     try:
                         # Save the uploaded file temporarily
                         temp_video_path = os.path.join("processed_videos", st.session_state.uploaded_file.name)
@@ -144,18 +136,18 @@ def main():
                             f.write(st.session_state.uploaded_file.getbuffer())
 
                         # Process the video (Object Detection)
-                        st.info("Processing the video...")
+                        st.info("Running object detection on video...")
                         process_video(temp_video_path, "processed_videos")
                         processed_video_path = os.path.join("processed_videos",
                                                             f"{st.session_state.uploaded_file.name}_out.mp4")
 
                         # Create anonymized version of the processed video
                         if os.path.exists(processed_video_path):
-                            st.info("Extracting features of the processed video...")
+                            st.info("Creating anonymized version of the processed video...")
                             anonymized_path, anonymize_time = anonymize_video(processed_video_path)
                             if anonymized_path and os.path.exists(anonymized_path):
                                 st.session_state.anonymized_video_path = anonymized_path
-                                st.success(f"Features extracted in {anonymize_time:.2f} seconds.")
+                                st.success(f"Video anonymized in {anonymize_time:.2f} seconds.")
                             else:
                                 st.warning("Could not create anonymized video. Will proceed with encryption.")
 
@@ -187,10 +179,10 @@ def main():
 
                                     st.success(f"Video encrypted in {encryption_time:.2f} seconds.")
 
-                                    # # Display encrypted preview
-                                    # with open(encrypted_path, 'rb') as f:
-                                    #     encrypted_data = f.read(100)  # Just read first 100 bytes
-                                    # st.code(str(encrypted_data))
+                                    # Display encrypted preview
+                                    with open(encrypted_path, 'rb') as f:
+                                        encrypted_data = f.read(100)  # Just read first 100 bytes
+                                    st.code(str(encrypted_data))
                                 else:
                                     st.error("Encryption failed. Please try again.")
                     except Exception as e:
@@ -198,13 +190,33 @@ def main():
         else:
             st.info("Please upload a video and generate an encryption key first.")
 
+        # Display anonymized video preview if available
+        if hasattr(st.session_state, 'anonymized_video_path') and st.session_state.anonymized_video_path:
+            try:
+                st.subheader("Anonymized Video Preview")
+
+                # Check if the file exists and has content
+                if os.path.exists(st.session_state.anonymized_video_path) and os.path.getsize(
+                        st.session_state.anonymized_video_path) > 0:
+                    # Read video file as bytes
+                    with open(st.session_state.anonymized_video_path, 'rb') as f:
+                        video_bytes = f.read()
+
+                    # Display the anonymized video
+                    st.video(video_bytes)
+                else:
+                    st.warning(
+                        f"Anonymized video file not found or empty: {st.session_state.anonymized_video_path}")
+            except Exception as e:
+                st.error(f"Error displaying anonymized video: {str(e)}")
+
     # Step 4: Feature Extraction (moved to its own expander)
-    with st.expander("Step 4: Store Video", expanded=True):
+    with st.expander("Step 4: Extract and Store Video Features", expanded=True):
         if hasattr(st.session_state, 'processed_video_path') and st.session_state.encrypted_success:
-            if st.button("Store video"):
-                with st.spinner("Processing..."):
+            if st.button("Extract and Store Video Features"):
+                with st.spinner("Extracting and storing features..."):
                     # Add debug info
-                    st.info("Processing video")
+                    st.info(f"Processing video file: {st.session_state.processed_video_path}")
                     if not os.path.exists(st.session_state.processed_video_path):
                         st.error(f"Video file not found at {st.session_state.processed_video_path}")
                     else:
@@ -219,8 +231,8 @@ def main():
 
                     if feature_result['status'] == 'success':
                         st.success(
-                            "Video stored")
-                        # st.write(f"Feature index saved to: {feature_result['index_path']}")
+                            f"Features extracted and stored. Found {feature_result['feature_count']} feature frames.")
+                        st.write(f"Feature index saved to: {feature_result['index_path']}")
 
                         # Removed the code that displays sample frames with anomalies
                     else:
@@ -229,7 +241,7 @@ def main():
             st.info("Please encrypt a video first before extracting features.")
 
     # Step 5: Search and Retrieval
-    with st.expander("Step 5: Search the anomalies frames", expanded=True):
+    with st.expander("Step 5: Search and Retrieval", expanded=True):
         # Search options
         search_option = st.radio("Search by:", ["Video Name", "Timestamp", "Anomaly Type"], horizontal=True)
 
@@ -244,6 +256,7 @@ def main():
                 search_result, retrieval_time = search_encrypted_videos(search_query)
 
                 if search_result:
+                    st.success(f"Video(s) found in {retrieval_time:.2f} seconds.")
                     selected_video = st.selectbox("Select a video:", search_result)
 
                     if selected_video:
@@ -478,6 +491,8 @@ def main():
                         else:
                             st.warning(
                                 f"No anonymized frames available: {anonymized_frames_result['message']}")
+            else:
+                st.warning("No videos with feature indices found.")
 
     # Step 6: Decryption Key
     with st.expander("Step 6: Decryption Key", expanded=True):
@@ -494,10 +509,10 @@ def main():
             st.info("Please select a video from the search results first.")
 
     # Step 7: Resultant Video
-    with st.expander("Step 7: Decrypted frames", expanded=True):
+    with st.expander("Step 7: Resultant Video", expanded=True):
         if st.session_state.decryption_key_uploaded and hasattr(st.session_state, 'selected_video'):
             if not st.session_state.decryption_success:
-                if st.button("Decrypt frames"):
+                if st.button("Decrypt and show video"):
                     with st.spinner("Decrypting video..."):
                         # Get the encrypted file
                         encrypted_file_path = os.path.join("encrypted_videos",
@@ -535,62 +550,62 @@ def main():
                         else:
                             st.error(f"Encrypted file not found: {encrypted_file_path}")
 
-            # if st.session_state.decryption_success:
-            #     st.write("→ Original decrypted video:")
-            #
-            #     try:
-            #         # Use multiple methods to try displaying the video
-            #         st.info(f"Attempting to play video from path: {st.session_state.decrypted_path}")
-            #
-            #         # Method 1: Direct path (most reliable)
-            #         st.video(st.session_state.decrypted_path)
-            #
-            #     except Exception as e1:
-            #         st.warning(f"Primary method failed: {str(e1)}")
-            #         try:
-            #             # Method 2: Read file and use BytesIO
-            #             with open(st.session_state.decrypted_path, 'rb') as video_file:
-            #                 video_bytes = video_file.read()
-            #
-            #             # Check for minimum video size
-            #             if len(video_bytes) < 1000:
-            #                 st.error(f"Video file seems too small ({len(video_bytes)} bytes) - may be corrupted")
-            #             else:
-            #                 # Try different approaches
-            #                 st.info("Trying alternative display method...")
-            #                 video_buffer = BytesIO(video_bytes)
-            #
-            #                 # Get file extension to determine format
-            #                 _, ext = os.path.splitext(st.session_state.decrypted_path)
-            #                 format_map = {
-            #                     '.mp4': 'video/mp4',
-            #                     '.avi': 'video/x-msvideo',
-            #                     '.mov': 'video/quicktime',
-            #                     '.mkv': 'video/x-matroska'
-            #                 }
-            #                 video_format = format_map.get(ext.lower(), 'video/mp4')
-            #
-            #                 st.video(video_buffer, format=video_format)
-            #
-            #         except Exception as e2:
-            #             st.error(f"Alternative method also failed: {str(e2)}")
-            #
-            #             # Method 3: Provide download option as last resort
-            #             st.warning("Video cannot be displayed in browser. Please download it to view:")
-            #             try:
-            #                 with open(st.session_state.decrypted_path, 'rb') as f:
-            #                     st.download_button(
-            #                         "Download video for external viewing",
-            #                         f,
-            #                         file_name=os.path.basename(st.session_state.decrypted_path)
-            #                     )
-            #             except Exception as e3:
-            #                 st.error(f"Could not create download button: {str(e3)}")
+            if st.session_state.decryption_success:
+                st.write("→ Original decrypted video:")
+
+                try:
+                    # Use multiple methods to try displaying the video
+                    st.info(f"Attempting to play video from path: {st.session_state.decrypted_path}")
+
+                    # Method 1: Direct path (most reliable)
+                    st.video(st.session_state.decrypted_path)
+
+                except Exception as e1:
+                    st.warning(f"Primary method failed: {str(e1)}")
+                    try:
+                        # Method 2: Read file and use BytesIO
+                        with open(st.session_state.decrypted_path, 'rb') as video_file:
+                            video_bytes = video_file.read()
+
+                        # Check for minimum video size
+                        if len(video_bytes) < 1000:
+                            st.error(f"Video file seems too small ({len(video_bytes)} bytes) - may be corrupted")
+                        else:
+                            # Try different approaches
+                            st.info("Trying alternative display method...")
+                            video_buffer = BytesIO(video_bytes)
+
+                            # Get file extension to determine format
+                            _, ext = os.path.splitext(st.session_state.decrypted_path)
+                            format_map = {
+                                '.mp4': 'video/mp4',
+                                '.avi': 'video/x-msvideo',
+                                '.mov': 'video/quicktime',
+                                '.mkv': 'video/x-matroska'
+                            }
+                            video_format = format_map.get(ext.lower(), 'video/mp4')
+
+                            st.video(video_buffer, format=video_format)
+
+                    except Exception as e2:
+                        st.error(f"Alternative method also failed: {str(e2)}")
+
+                        # Method 3: Provide download option as last resort
+                        st.warning("Video cannot be displayed in browser. Please download it to view:")
+                        try:
+                            with open(st.session_state.decrypted_path, 'rb') as f:
+                                st.download_button(
+                                    "Download video for external viewing",
+                                    f,
+                                    file_name=os.path.basename(st.session_state.decrypted_path)
+                                )
+                        except Exception as e3:
+                            st.error(f"Could not create download button: {str(e3)}")
 
                 st.write("→ Detected frames (unblurred after decryption):")
 
                 # Add debug logging
-                st.info(f"Looking for frames...")
+                st.info(f"Looking for frames in detected_frames/{st.session_state.selected_video}")
 
                 # Check if we need to extract features
                 frames_dir = os.path.join("detected_frames", st.session_state.selected_video)
@@ -610,6 +625,8 @@ def main():
                                 f"Features extracted. Found {feature_result['feature_count']} feature frames.")
                         else:
                             st.error(f"Feature extraction failed: {feature_result['message']}")
+                else:
+                    st.success(f"Found frames directory at: {frames_dir}")
 
                 # Get frames after ensuring directory exists - now use anonymize=False to get original frames
                 frames_result = get_detected_frames(
