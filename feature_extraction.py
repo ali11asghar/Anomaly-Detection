@@ -4,20 +4,22 @@ import json
 import cv2
 import numpy as np
 from cryptography.fernet import Fernet
-from ultralytics import YOLO
+from detection import load_model
 
 
 class FeatureExtractor:
-    def __init__(self, model_path=None):
+    def __init__(self):
         """Initialize the feature extractor with optional YOLO model"""
         self.key = Fernet.generate_key()
         self.cipher = Fernet(self.key)
 
         # Load YOLO model if provided
-        if model_path:
-            self.model = YOLO(model_path)
+        model = load_model()
+        if model:
+            self.model = model
         else:
             self.model = None
+            raise "Model best.pt not found for feature extraction"
 
     def encrypt(self, data):
         """Encrypt data using Fernet"""
@@ -34,13 +36,12 @@ class FeatureExtractor:
     def extract_features(self, video_path, save_frames=False, custom_video_name=None):
         """Extract features from video frames using YOLO model"""
         if not self.model:
-            model_path = '/home/abdullah/Downloads/AnomalyDetection/runs/best.pt'
-            if os.path.exists(model_path):
-                self.model = YOLO(model_path)
+            model = load_model()
+            if model:
+                self.model = model
             else:
                 # Fall back to a simpler approach if model doesn't exist
-                print(f"Model not found at {model_path}, using default detection")
-                self.model = YOLO("yolov8n.pt")  # Use a standard model as fallback
+                raise "Model best.pt not found for feature extraction"
 
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():

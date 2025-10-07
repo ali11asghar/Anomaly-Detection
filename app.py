@@ -87,6 +87,8 @@ def main():
         st.session_state.timestamp_search_results = []
     if 'anonymized_video_path' not in st.session_state:
         st.session_state.anonymized_video_path = None
+    if 'video_processed_and_stored' not in st.session_state:
+        st.session_state.video_processed_and_stored = False
 
     # Add Reset button at the top
     col1, col2 = st.columns([5, 1])
@@ -132,104 +134,80 @@ def main():
                 st.session_state.encryption_key_generated = True
                 st.rerun()
 
-    # Step 3: Encryption
-    with st.expander("Step 3: Feature Extraction & Encryption", expanded=True):
+    # Step 3: Process, Encrypt & Store Video (Merged Steps)
+    with st.expander("Step 3: Process, Encrypt & Store Video", expanded=True):
         if hasattr(st.session_state, 'uploaded_file') and st.session_state.encryption_key_generated:
-            if st.button("Process video",):
-                with st.spinner("Processing..."):
-                    try:
-                        # Save the uploaded file temporarily
-                        temp_video_path = os.path.join("processed_videos", st.session_state.uploaded_file.name)
-                        with open(temp_video_path, "wb") as f:
-                            f.write(st.session_state.uploaded_file.getbuffer())
+            if not st.session_state.video_processed_and_stored:
+                if st.button("Process video"):
+                    with st.spinner("Processing video..."):
+                        try:
+                            # Save the uploaded file temporarily
+                            temp_video_path = os.path.join("processed_videos", st.session_state.uploaded_file.name)
+                            with open(temp_video_path, "wb") as f:
+                                f.write(st.session_state.uploaded_file.getbuffer())
 
-                        # Process the video (Object Detection)
-                        st.info("Processing the video...")
-                        process_video(temp_video_path, "processed_videos")
-                        processed_video_path = os.path.join("processed_videos",
-                                                            f"{st.session_state.uploaded_file.name}_out.mp4")
+                            process_video(temp_video_path, "processed_videos")
+                            processed_video_path = os.path.join("processed_videos",
+                                                                f"{st.session_state.uploaded_file.name}_out.mp4")
 
-                        # Create anonymized version of the processed video
-                        if os.path.exists(processed_video_path):
-                            st.info("Extracting features of the processed video...")
-                            anonymized_path, anonymize_time = anonymize_video(processed_video_path)
-                            if anonymized_path and os.path.exists(anonymized_path):
-                                st.session_state.anonymized_video_path = anonymized_path
-                                st.success(f"Features extracted in {anonymize_time:.2f} seconds.")
-                            else:
-                                st.warning("Could not create anonymized video. Will proceed with encryption.")
+                            # Step 3b: Create anonymized version and extract features
+                            if os.path.exists(processed_video_path):
+                                anonymized_path, anonymize_time = anonymize_video(processed_video_path)
+                                if anonymized_path and os.path.exists(anonymized_path):
+                                    st.session_state.anonymized_video_path = anonymized_path
+                                else:
+                                    st.warning("Could not create anonymized video. Will proceed with encryption.")
 
-                            # Encrypt the processed video
-                            st.info("Encrypting processed video...")
-                            with open(processed_video_path, 'rb') as video_file:
-                                class VideoFile:
-                                    def __init__(self, file, name):
-                                        self.file = file
-                                        self.name = name
+                                # Step 3c: Encrypt the processed video
+                                with open(processed_video_path, 'rb') as video_file:
+                                    class VideoFile:
+                                        def __init__(self, file, name):
+                                            self.file = file
+                                            self.name = name
 
-                                    def read(self):
-                                        return self.file.read()
+                                        def read(self):
+                                            return self.file.read()
 
-                                video_file_wrapper = VideoFile(video_file, os.path.basename(processed_video_path))
-                                encrypted_path, key_path, encryption_time = encrypt_video(
-                                    video_file_wrapper,
+                                    video_file_wrapper = VideoFile(video_file, os.path.basename(processed_video_path))
+                                    encrypted_path, key_path, encryption_time = encrypt_video(
+                                        video_file_wrapper,
+                                        st.session_state.video_name,
+                                        st.session_state.video_description
+                                    )
+
+                                    if encrypted_path:
+                                        st.session_state.encrypted_path = encrypted_path
+                                        st.session_state.key_path = key_path
+                                        st.session_state.encryption_time = encryption_time
+                                        st.session_state.processed_video_path = processed_video_path
+                                        st.session_state.encrypted_success = True
+                                    else:
+                                        st.error("❌ Encryption failed. Please try again.")
+                                        return
+
+                                # Step 3d: Process and store video features
+                                if not os.path.exists(st.session_state.processed_video_path):
+                                    st.error(f"Video file not found at {st.session_state.processed_video_path}")
+                                    return
+
+                                # Extract and store features
+                                feature_result = process_video_features(
+                                    st.session_state.processed_video_path,
                                     st.session_state.video_name,
-                                    st.session_state.video_description
+                                    video_name_for_dir=st.session_state.video_name
                                 )
 
-                                # Store results in session state
-                                if encrypted_path:
-                                    st.session_state.encrypted_path = encrypted_path
-                                    st.session_state.key_path = key_path
-                                    st.session_state.encryption_time = encryption_time
-                                    st.session_state.processed_video_path = processed_video_path
-                                    st.session_state.encrypted_success = True
-
-                                    st.success(f"Video encrypted in {encryption_time:.2f} seconds.")
-
-                                    # # Display encrypted preview
-                                    # with open(encrypted_path, 'rb') as f:
-                                    #     encrypted_data = f.read(100)  # Just read first 100 bytes
-                                    # st.code(str(encrypted_data))
+                                if feature_result['status'] == 'success':
+                                    st.session_state.video_processed_and_stored = True
                                 else:
-                                    st.error("Encryption failed. Please try again.")
-                    except Exception as e:
-                        st.error(f"An error occurred: {str(e)}")
-        else:
-            st.info("Please upload a video and generate an encryption key first.")
+                                    st.error(f"❌ Feature extraction failed: {feature_result['message']}")
+                        except Exception as e:
+                            st.error(f"❌ An error occurred: {str(e)}")
+            else:
+                st.success("✅ Video has been processed, encrypted, and stored successfully!")
 
-    # Step 4: Feature Extraction (moved to its own expander)
-    with st.expander("Step 4: Store Video", expanded=True):
-        if hasattr(st.session_state, 'processed_video_path') and st.session_state.encrypted_success:
-            if st.button("Store video"):
-                with st.spinner("Processing..."):
-                    # Add debug info
-                    st.info("Processing video")
-                    if not os.path.exists(st.session_state.processed_video_path):
-                        st.error(f"Video file not found at {st.session_state.processed_video_path}")
-                    else:
-                        st.info(f"Video size: {os.path.getsize(st.session_state.processed_video_path)} bytes")
-
-                    # Continue with feature extraction
-                    feature_result = process_video_features(
-                        st.session_state.processed_video_path,
-                        st.session_state.video_name,
-                        video_name_for_dir=st.session_state.video_name
-                    )
-
-                    if feature_result['status'] == 'success':
-                        st.success(
-                            "Video stored")
-                        # st.write(f"Feature index saved to: {feature_result['index_path']}")
-
-                        # Removed the code that displays sample frames with anomalies
-                    else:
-                        st.error(f"Feature extraction failed: {feature_result['message']}")
-        else:
-            st.info("Please encrypt a video first before extracting features.")
-
-    # Step 5: Search and Retrieval
-    with st.expander("Step 5: Search the anomalies frames", expanded=True):
+    # Step 4: Search Anomaly Frames (Updated step number)
+    with st.expander("Step 4: Search the Anomaly Frames", expanded=True):
         # Search options
         search_option = st.radio("Search by:", ["Video Name", "Timestamp", "Anomaly Type"], horizontal=True)
 
@@ -370,13 +348,12 @@ def main():
                                  if f.endswith("_index.json")]
 
             if available_indices:
-                st.success(f"Found {len(available_indices)} videos with feature indices.")
                 selected_video = st.selectbox("Select a video:", available_indices)
 
                 if selected_video:
                     st.session_state.selected_video = selected_video
             if st.button("Search"):
-                                        # Show matching frames
+                # Show matching frames
                 if selected_anomalies:
                     key_path = os.path.join("feature_indices",
                                             f"{selected_video}_feature_key.key")
@@ -479,8 +456,8 @@ def main():
                             st.warning(
                                 f"No anonymized frames available: {anonymized_frames_result['message']}")
 
-    # Step 6: Decryption Key
-    with st.expander("Step 6: Decryption Key", expanded=True):
+    # Step 5: Decryption Key (Updated step number)
+    with st.expander("Step 5: Decryption Key", expanded=True):
         if hasattr(st.session_state, 'selected_video'):
             st.info(f"Selected video: {st.session_state.selected_video}")
 
@@ -493,8 +470,8 @@ def main():
         else:
             st.info("Please select a video from the search results first.")
 
-    # Step 7: Resultant Video
-    with st.expander("Step 7: Decrypted frames", expanded=True):
+    # Step 6: Decrypted frames (Updated step number)
+    with st.expander("Step 6: Decrypted Frames", expanded=True):
         if st.session_state.decryption_key_uploaded and hasattr(st.session_state, 'selected_video'):
             if not st.session_state.decryption_success:
                 if st.button("Decrypt frames"):
@@ -534,58 +511,6 @@ def main():
                                     st.error("Decryption failed. Please check your key file.")
                         else:
                             st.error(f"Encrypted file not found: {encrypted_file_path}")
-
-            # if st.session_state.decryption_success:
-            #     st.write("→ Original decrypted video:")
-            #
-            #     try:
-            #         # Use multiple methods to try displaying the video
-            #         st.info(f"Attempting to play video from path: {st.session_state.decrypted_path}")
-            #
-            #         # Method 1: Direct path (most reliable)
-            #         st.video(st.session_state.decrypted_path)
-            #
-            #     except Exception as e1:
-            #         st.warning(f"Primary method failed: {str(e1)}")
-            #         try:
-            #             # Method 2: Read file and use BytesIO
-            #             with open(st.session_state.decrypted_path, 'rb') as video_file:
-            #                 video_bytes = video_file.read()
-            #
-            #             # Check for minimum video size
-            #             if len(video_bytes) < 1000:
-            #                 st.error(f"Video file seems too small ({len(video_bytes)} bytes) - may be corrupted")
-            #             else:
-            #                 # Try different approaches
-            #                 st.info("Trying alternative display method...")
-            #                 video_buffer = BytesIO(video_bytes)
-            #
-            #                 # Get file extension to determine format
-            #                 _, ext = os.path.splitext(st.session_state.decrypted_path)
-            #                 format_map = {
-            #                     '.mp4': 'video/mp4',
-            #                     '.avi': 'video/x-msvideo',
-            #                     '.mov': 'video/quicktime',
-            #                     '.mkv': 'video/x-matroska'
-            #                 }
-            #                 video_format = format_map.get(ext.lower(), 'video/mp4')
-            #
-            #                 st.video(video_buffer, format=video_format)
-            #
-            #         except Exception as e2:
-            #             st.error(f"Alternative method also failed: {str(e2)}")
-            #
-            #             # Method 3: Provide download option as last resort
-            #             st.warning("Video cannot be displayed in browser. Please download it to view:")
-            #             try:
-            #                 with open(st.session_state.decrypted_path, 'rb') as f:
-            #                     st.download_button(
-            #                         "Download video for external viewing",
-            #                         f,
-            #                         file_name=os.path.basename(st.session_state.decrypted_path)
-            #                     )
-            #             except Exception as e3:
-            #                 st.error(f"Could not create download button: {str(e3)}")
 
                 st.write("→ Detected frames (unblurred after decryption):")
 

@@ -1,4 +1,5 @@
 import os
+import requests
 from ultralytics import YOLO
 import cv2
 
@@ -6,23 +7,28 @@ import cv2
 # In detection.py:
 def load_model():
     # Try multiple potential model locations
-    potential_paths = [
-        os.path.join('models', 'best.pt'),  # Local models directory
-        os.path.join(os.path.expanduser('~'), 'Downloads', 'AnomalyDetection', 'runs', 'best.pt'),  # Original path
-        'yolov8n.pt'  # Fallback to default model
-    ]
+    potential_paths = [os.path.join('/', 'home', 'abdullah', 'Downloads', 'AnomalyDetection','runs', 'bestv2.pt')]
 
     for path in potential_paths:
         if os.path.exists(path):
             return YOLO(path)
 
-    # If no model is found, use YOLO's default model
-    print("No local model found, using YOLO default model")
-    return YOLO("yolov8n.pt")
+    raise "Model Path is not valid"
+
+def download_and_load_model():
+    model_url = "https://huggingface.co/spaces/ranaaliasghar/anomaly-detection/resolve/main/runs/bestv2.pt"
+    model_path = "runs/bestv2.pt"
+    os.makedirs("runs", exist_ok=True)
+    if not os.path.exists(model_path):
+        r = requests.get(model_url)
+        with open(model_path, "wb") as f:
+            f.write(r.content)
+    return YOLO(model_path)
 
 
 def process_video(video_path, output_path):
     # Load model only when needed
+    # model = load_model()
     model = load_model()
 
     cap = cv2.VideoCapture(video_path)
